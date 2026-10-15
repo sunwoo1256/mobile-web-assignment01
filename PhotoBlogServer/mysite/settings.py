@@ -123,9 +123,18 @@ STATIC_ROOT = BASE_DIR / 'staticfiles'
 MEDIA_URL = "/media/"
 MEDIA_ROOT = BASE_DIR / "media/"
 
+# @login_required가 보낼 로그인 화면 (DRF 브라우저블 API 로그인 재사용)
+LOGIN_URL = 'rest_framework:login'
+
 REST_FRAMEWORK = {
-    'DEFAULT_PERMISSION_CLASSES': [
-        # 'rest_framework.permissions.IsAdminUser',
+    # Token을 먼저 두어야 인증 없는 요청이 403이 아닌 401(WWW-Authenticate: Token)로 응답된다
+    'DEFAULT_AUTHENTICATION_CLASSES': [
+        'rest_framework.authentication.TokenAuthentication',
+        'rest_framework.authentication.SessionAuthentication',
     ],
-    'PAGE_SIZE': 10
+    'DEFAULT_PERMISSION_CLASSES': [
+        'rest_framework.permissions.IsAuthenticated',
+    ],
+    # PAGE_SIZE는 페이지네이션 클래스 없이 무시되고 있었으므로 제거.
+    # 페이지네이션을 켜면 응답이 배열이 아니게 되어 앱의 JSON 파싱이 깨진다.
 }

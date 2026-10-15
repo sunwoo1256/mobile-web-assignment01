@@ -1,3 +1,4 @@
+from django.contrib.auth.decorators import login_required
 from django.shortcuts import render, get_object_or_404, redirect
 from django.utils import timezone
 from .models import Post
@@ -15,9 +16,10 @@ def post_detail(request, pk):
     post = get_object_or_404(Post, pk=pk)
     return render(request, 'blog/post_detail.html', {'post': post})
 
+@login_required
 def post_new(request):
     if request.method == "POST":
-        form = PostForm(request.POST)
+        form = PostForm(request.POST, request.FILES)
         if form.is_valid():
             post = form.save(commit=False)
             post.author = request.user
@@ -28,10 +30,11 @@ def post_new(request):
         form = PostForm()
     return render(request, 'blog/post_edit.html', {'form': form})
 
+@login_required
 def post_edit(request, pk):
     post = get_object_or_404(Post, pk=pk)
     if request.method == "POST":
-        form = PostForm(request.POST, instance=post)
+        form = PostForm(request.POST, request.FILES, instance=post)
         if form.is_valid():
             post = form.save(commit=False)
             post.author = request.user
@@ -45,6 +48,14 @@ def post_edit(request, pk):
 def js_test(request):
     return render(request, 'blog/js_test.html', {})
 
-class IntruderImage(viewsets.ModelViewSet):
+class BlogImages(viewsets.ModelViewSet):
     queryset = Post.objects.all()
     serializer_class = PostSerializer
+
+    def perform_create(self, serializer):
+        # 웹 목록(post_list)은 published_date <= now 인 글만 보여주므로,
+        # API로 올린 글에 published_date가 없으면 현재 시각으로 채운다
+        if serializer.validated_data.get('published_date') is None:
+            serializer.save(published_date=timezone.now())
+        else:
+            serializer.save()
