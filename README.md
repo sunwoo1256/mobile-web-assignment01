@@ -122,7 +122,56 @@ curl.exe -X POST -d "username=<id>&password=<pw>" http://127.0.0.1:8000/api-toke
 
 ## telnet / JSON Viewer 검증
 
-> 작성 예정 (Task 2)
+안드로이드 앱이 보내는 것과 같은 HTTP 요청을 telnet으로 직접 보내 응답을 확인한다. 요청 원문은 [`PhotoBlogServer/tools/telnet_request.txt`](PhotoBlogServer/tools/telnet_request.txt)에 있다 (`<TOKEN>`을 실제 토큰으로 바꿔 사용).
+
+```
+GET /api_root/Post/ HTTP/1.1
+Authorization: Token <TOKEN>
+User-Agent: Dalvik/2.1.0 (Linux; U; Android 13; sdk_gphone64_arm64 Build/TPB4.220624.004)
+Host: 10.0.2.2:8000
+Connection: Keep-Alive
+Accept-Encoding: gzip
+
+```
+
+- 헤더 끝을 알리는 **빈 줄(Enter 한 번 더)이 반드시 있어야** 서버가 응답한다.
+- `Host`는 `ALLOWED_HOSTS`에 있는 값이어야 한다(아니면 400). `10.0.2.2:8000`으로 보내면 응답의 `image` URL도 `http://10.0.2.2:8000/...`로 만들어진다.
+- `Accept-Encoding: gzip`이 있어도 Django 개발 서버는 압축하지 않으므로(GZipMiddleware 미사용) 응답 본문은 평문 JSON이다. 응답이 깨진 바이너리로 보이면 이 줄을 빼고 보낸다.
+
+### Windows에서 Telnet Client 활성화
+
+- 방법 1: 제어판 → 프로그램 → **Windows 기능 켜기/끄기** → **텔넷 클라이언트(Telnet Client)** 체크 → 확인
+- 방법 2: **관리자 권한** PowerShell에서
+  ```powershell
+  Enable-WindowsOptionalFeature -Online -FeatureName TelnetClient
+  ```
+- macOS: `brew install telnet`
+
+### 요청 보내기 (Windows)
+
+```powershell
+chcp 65001          # 응답의 한글(UTF-8)이 깨지지 않도록 콘솔 코드페이지 변경
+telnet
+```
+
+telnet 프롬프트(`Microsoft Telnet>`)에서:
+
+```
+set localecho       # 입력한 내용이 화면에 보이도록 (기본은 안 보임)
+open 127.0.0.1 8000
+```
+
+연결되면 화면이 지워진다. 이 상태에서 요청 원문(토큰 치환본)을 붙여넣고(Windows Terminal: `Ctrl+V` 또는 마우스 오른쪽 클릭) 마지막에 **Enter를 한 번 더** 눌러 빈 줄을 보낸다.
+`HTTP/1.1 200 OK` 헤더와 JSON 배열 본문이 출력된다. 토큰을 빼거나 틀리게 보내면 `401 Unauthorized`가 나온다.
+종료: `Ctrl + ]` → `quit`
+
+> `chcp 65001`을 해도 한글이 깨져 보이면 콘솔 표시 문제일 뿐 서버 응답은 정상(UTF-8)이다. 다음 단계의 JSON Viewer에서는 정상 표시된다.
+
+### JSON Viewer로 응답 확인
+
+1. telnet 응답에서 본문(`[` ~ `]`)만 복사
+2. https://codebeautify.org/jsonviewer 왼쪽 입력창에 붙여넣기
+3. **Beautify** / **Tree View**로 구조 확인
 
 ## API 검증 엔진 · 자동 테스트 · Coverage
 
