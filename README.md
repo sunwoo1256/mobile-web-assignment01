@@ -177,7 +177,102 @@ open 127.0.0.1 8000
 
 ## API 검증 엔진 · 자동 테스트 · Coverage
 
-> 작성 예정 (Task 3)
+강의자료 ch04(TDD) 방식으로 **엔진(실제 코드) ↔ 테스트 코드**를 짝으로 만들었다. 테스트는 표준 라이브러리 `unittest`만 사용한다.
+
+| 파일 | 역할 |
+|---|---|
+| [`api_test_engine/photoblog_api.py`](PhotoBlogServer/api_test_engine/photoblog_api.py) | 엔진. 포토 블로그 REST API 호출·검증 클래스 `PhotoBlogApi` (`urllib`만 사용) |
+| [`api_test_engine/test_photoblog_api.py`](PhotoBlogServer/api_test_engine/test_photoblog_api.py) | 엔진 테스트. 단위 37개(서버 없이 `FakeServer`로 HTTP 대체) + 통합 9개(실제 서버) |
+| [`blog/tests.py`](PhotoBlogServer/blog/tests.py) | Django 서버 측 테스트 29개 (API·토큰·웹 뷰·모델) |
+
+### 엔진 `PhotoBlogApi`
+
+| 메서드 | 설명 |
+|---|---|
+| `get_token(username, password)` | `/api-token-auth/`로 토큰 발급 후 저장 |
+| `get_posts()` | `GET /api_root/Post/` → JSON 배열 |
+| `create_post(title, text, image_path, author=None, published_date=None)` | multipart/form-data 업로드 (바디 직접 구성, 텍스트 UTF-8) |
+| `delete_post(post_id)` | `DELETE /api_root/Post/<id>/` (204 기대) |
+| `validate_post(post)` / `validate_post_list(posts)` | 필수 키·타입·image URL 검사 → 문제 목록 (빈 리스트면 정상) |
+| `run_scenario(...)` | 토큰 → 목록 → 업로드 → 반영 확인 → 삭제 → 인증 없는 요청 거부(401) 6단계 실행 |
+
+기대한 상태코드가 아니면 `ApiError(status, message)`를 던진다(연결 실패 시 `status=None`).
+
+CLI로 서버 하나를 통째로 검증할 수 있다 (로컬/PythonAnywhere 공용, 실패 시 exit code 1):
+
+```powershell
+cd PhotoBlogServer\api_test_engine
+..\venv\Scripts\python photoblog_api.py --base-url http://127.0.0.1:8000 --user <id> --password <pw> --author <user id>
+```
+```
+대상 서버: http://127.0.0.1:8000
+[PASS] 1. 토큰 발급 - token=52ce898a...
+[PASS] 2. 목록 조회 및 스키마 검증 - 0건, 스키마 정상
+[PASS] 3. 게시물 업로드 - id=5, title=scenario-79bdc8a8
+[PASS] 4. 목록 반영 확인 - id=5 목록에 있음
+[PASS] 5. 게시물 삭제 - id=5 삭제(204)
+[PASS] 6. 인증 없는 요청 거부 - 401 Unauthorized
+결과: 6/6 통과
+```
+
+> `--author`는 현재 서버가 `author`를 필수로 받기 때문에 필요하다(관리자 계정은 보통 `1`). 업로드한 글은 시나리오 끝에 삭제하지만, 서버의 `media/`에 이미지 파일은 남는다(Django는 행 삭제 시 파일을 지우지 않음).
+
+### 테스트 실행
+
+```powershell
+cd PhotoBlogServer
+pip install -r requirements-dev.txt          # coverage 설치
+
+# 1) 엔진 테스트 — 서버 없이도 실행 가능 (통합 테스트는 skip)
+cd api_test_engine
+..\venv\Scripts\python test_photoblog_api.py
+
+# 통합 테스트까지 실행하려면 runserver를 켠 상태에서 환경변수 지정
+$env:PHOTOBLOG_BASE_URL = "http://127.0.0.1:8000"
+$env:PHOTOBLOG_USER = "<id>"
+$env:PHOTOBLOG_PASSWORD = "<pw>"
+$env:PHOTOBLOG_AUTHOR = "1"                  # 선택, 기본 1
+..\venv\Scripts\python test_photoblog_api.py
+
+# 2) 서버 측 테스트 (임시 DB·임시 media 사용, 실제 데이터에 영향 없음)
+cd ..
+python manage.py test blog -v 2
+```
+
+### Code Coverage
+
+```powershell
+# 엔진 커버리지 (보고서 ID 6 메인)
+cd PhotoBlogServer\api_test_engine
+..\venv\Scripts\python -m coverage run test_photoblog_api.py
+..\venv\Scripts\python -m coverage report -m
+..\venv\Scripts\python -m coverage html      # → api_test_engine\htmlcov\index.html
+
+# 서버 측 커버리지 (보조)
+cd ..
+python -m coverage run --source=blog manage.py test blog
+python -m coverage report -m
+python -m coverage html                      # → PhotoBlogServer\htmlcov\index.html
+```
+
+측정 결과:
+
+| 대상 | 결과 |
+|---|---|
+| `photoblog_api.py` (엔진) | **100%** — 구문 203 / 분기 52, Miss 0 (`.coveragerc`에서 branch 측정) |
+| `test_photoblog_api.py` | 서버 실행 시 98%, 미실행 시 87% (차이는 skip된 통합 테스트) |
+| `blog` 앱 | **100%** — 290 구문, Miss 0 |
+
+`api_test_engine/.coveragerc`는 분기 커버리지를 켜고, CLI 진입점(`if __name__ == '__main__':`) 한 줄만 측정에서 제외한다(`main()`은 테스트에서 직접 호출해 검증).
+
+### TDD 진행 기록
+
+git 이력으로 확인할 수 있다.
+
+1. `7bb57d2 test(engine): ...` — 테스트 먼저 작성, 엔진은 인터페이스만 → `FAILED (failures=9, errors=37, skipped=1)`
+2. `15f2658 feat(engine): ...` — 엔진 구현 → `OK (skipped=1)`, 커버리지 100%
+
+빨강 단계를 다시 보려면: `git stash; git checkout 7bb57d2 -- PhotoBlogServer/api_test_engine` → 실행 → `git checkout HEAD -- PhotoBlogServer/api_test_engine; git stash pop`
 
 ## Socket Server
 
@@ -215,6 +310,11 @@ open 127.0.0.1 8000
    - `post_new`/`post_edit`에 `@login_required` 적용 — 기존에는 비로그인 상태로 저장하면 `author=AnonymousUser`로 오류가 났다. 로그인 화면은 `LOGIN_URL = 'rest_framework:login'`(DRF 로그인 화면)을 재사용한다.
    - `post_detail.html`에 이미지 표시 추가 (목록 화면은 슬라이드 25와 같게 유지).
    - 보고서 ID 14(Client 편의 기능)에는 포함하지 않는다.
+
+### 테스트
+
+- 초록 단계 구현 중 테스트용 `FakeServer`가 `json.dumps` 기본값(`ensure_ascii=True`)으로 한글을 `\uXXXX`로 내보내 실패한 테스트 2건이 있었다. 실제 DRF 서버는 UTF-8 원문을 보내므로(telnet으로 확인) 가짜 서버를 `ensure_ascii=False`로 고쳤다.
+- `blog/tests.py`는 Task 0에서 이미 구현한 서버 기능을 검증하므로 빨강 단계 없이 작성했다. 이후 서버 기능(Task 8)은 테스트를 먼저 추가한다.
 
 > 알려진 동작(미수정): 교수님 코드의 `post_edit`은 수정할 때마다 `author`를 수정한 사용자로, `published_date`를 수정 시각으로 덮어쓴다. 과제 범위 밖이라 그대로 둔다.
 
