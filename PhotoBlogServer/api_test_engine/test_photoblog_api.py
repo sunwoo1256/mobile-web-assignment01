@@ -41,7 +41,8 @@ def make_post(post_id=1, **overrides):
 
 def respond(url, status, body):
     """urlopen의 반환값(2xx) 또는 HTTPError(4xx/5xx)를 흉내 낸다"""
-    data = body if isinstance(body, bytes) else json.dumps(body).encode('utf-8')
+    # DRF처럼 한글을 \uXXXX로 이스케이프하지 않고 UTF-8 그대로 보낸다
+    data = body if isinstance(body, bytes) else json.dumps(body, ensure_ascii=False).encode('utf-8')
     if status >= 400:
         raise urllib.error.HTTPError(url, status, 'error', {}, io.BytesIO(data))
     response = mock.MagicMock()
