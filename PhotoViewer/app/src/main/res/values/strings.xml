@@ -1,3 +1,7 @@
 <resources>
-    <string name="app_name">imageviewdemo</string>
+    <string name="app_name">PhotoViewer</string>
+    <string name="btn_download">동기화</string>
+    <string name="btn_upload">새로운 이미지 게시</string>
+    <string name="text_initial">동기화 버튼을 눌러 이미지를 불러오세요.</string>
+    <string name="image_description">게시물 이미지</string>
 </resources>

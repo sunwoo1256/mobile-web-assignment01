@@ -288,7 +288,34 @@ cd PhotoBlogServer\socket_server
 
 ## Android 앱 실행
 
-> 작성 예정 (Task 5~6)
+`PhotoViewer/`를 Android Studio로 연다 (compileSdk/targetSdk 34, minSdk 24, Java 11).
+
+### 서버 주소·토큰 설정
+
+토큰을 레포에 올리지 않기 위해 **`PhotoViewer/local.properties`**(git 제외)에 적는다. 빌드 시 `BuildConfig.DEFAULT_BASE_URL` / `DEFAULT_TOKEN`으로 들어가 앱의 기본값이 된다.
+
+```properties
+photoblog.baseUrl=http://10.0.2.2:8000
+photoblog.token=<python manage.py drf_create_token <user> 로 만든 토큰>
+```
+
+- 에뮬레이터에서 PC의 `127.0.0.1`은 `10.0.2.2`다. Django는 `python manage.py runserver 0.0.0.0:8000`으로 실행한다.
+- 값은 [`ApiConfig`](PhotoViewer/app/src/main/java/com/example/imageviewdemo/ApiConfig.java)에서 한 곳으로 관리한다. SharedPreferences에 저장된 값이 있으면 그것을, 없으면 위 기본값을 쓴다(설정 화면은 Task 8).
+- `local.properties`를 바꾼 뒤에는 다시 빌드해야 반영된다.
+
+### 빌드 (명령줄)
+
+```powershell
+cd PhotoViewer
+$env:JAVA_HOME = "C:\Program Files\Android\Android Studio\jbr"
+.\gradlew assembleDebug        # → app\build\outputs\apk\debug\app-debug.apk
+```
+
+### 동기화
+
+1. Django 서버 실행
+2. 앱에서 **동기화** → `GET /api_root/Post/` (헤더 `Authorization: Token <토큰>`) → 각 게시물의 `image` URL에서 이미지 다운로드 → 목록 표시
+3. "이미지 로드 성공!" 표시. 게시물이 없으면 "불러올 이미지가 없습니다.", 서버 오류면 상태코드/원인을 표시
 
 ## PythonAnywhere 배포
 
@@ -329,3 +356,12 @@ cd PhotoBlogServer\socket_server
 ### 클라이언트
 
 - Android 프로젝트는 Groovy `build.gradle`이 아닌 Kotlin DSL(`build.gradle.kts`) + 버전 카탈로그(`gradle/libs.versions.toml`)를 사용한다. 의존성은 이 두 파일에 추가한다.
+- 라이브러리 버전: `appcompat 1.7.0`, `material 1.12.0`, `activity 1.9.3`(compileSdk 34 호환), `recyclerview 1.3.2`, `swiperefreshlayout 1.1.0` 추가. 템플릿 버전으로도 빌드 문제는 없었으며 `resolutionStrategy.force`는 필요하지 않았다. (`coreKtx`는 Java 템플릿에 없어 추가하지 않음)
+- **서버 주소·토큰 하드코딩 제거**: 슬라이드는 `MainActivity`에 `site_url`과 토큰을 직접 적지만, `ApiConfig`(SharedPreferences) + `local.properties` → `BuildConfig` 기본값으로 관리한다. 토큰이 레포에 올라가지 않고, 로컬/PythonAnywhere 전환이 쉽다.
+- 슬라이드 19의 `private class. CloadImage` 오타를 수정했다(`private class CloadImage`).
+- 인증 헤더는 `Token <토큰>` 형식이다(서버가 DRF `TokenAuthentication` 사용).
+- 이미지는 `BitmapFactory.Options.inJustDecodeBounds`로 크기를 먼저 읽고 화면 너비에 맞춰 `inSampleSize`로 줄여 디코딩한다(큰 사진의 OOM 방지). 이미지 요청에는 토큰을 붙이지 않는다(media는 인증 없이 제공).
+- 네트워크 오류·HTTP 오류를 화면에 표시하고, 연결/읽기 타임아웃(10초/15초)을 둔다.
+- 템플릿의 EdgeToEdge 코드가 루트 padding을 시스템 바 크기로 덮어써서 레이아웃 여백(8dp)이 사라지므로, 기본 여백 + 시스템 바로 계산하게 했다.
+- 앱 표시 이름을 `imageviewdemo`에서 `PhotoViewer`로 바꿨다(패키지명은 그대로 `com.example.imageviewdemo`).
+- AsyncTask는 deprecated지만 수업 코드와의 일관성을 위해 사용했다.
