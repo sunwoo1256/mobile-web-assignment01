@@ -276,7 +276,15 @@ git 이력으로 확인할 수 있다.
 
 ## Socket Server
 
-> 작성 예정 (Task 4)
+앱이 보내는 HTTP 요청 원문(헤더 + multipart 바디)을 파일로 저장하는 소켓 서버. 자세한 내용은 [`PhotoBlogServer/socket_server/README.md`](PhotoBlogServer/socket_server/README.md).
+
+```powershell
+# Django 서버를 끈 뒤 같은 포트(8000)로 실행
+cd PhotoBlogServer\socket_server
+..\venv\Scripts\python socket_server.py
+```
+
+앱에서 동기화/업로드 → `socket_server/request/YYYY-MM-DD-HH-MM-SS.bin` 생성 → VSCode로 열어 확인.
 
 ## Android 앱 실행
 
