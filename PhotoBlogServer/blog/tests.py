@@ -58,10 +58,11 @@ class PostApiTest(TempMediaMixin, APITestCase):
         self.assertIsInstance(response.json(), list)
         self.assertEqual(len(response.json()), 1)
 
-    def test_post_fields_include_id_and_absolute_image_url(self):
+    def test_post_fields_keep_original_order_and_add_social_fields(self):
         post = self.client.get(POSTS_URL).json()[0]
-        self.assertEqual(list(post), ['id', 'author', 'title', 'text', 'created_date',
-                                      'published_date', 'image'])
+        self.assertEqual(list(post), ['id', 'author', 'title', 'text', 'created_date', 'published_date',
+                                      'image', 'author_name', 'view_count', 'like_count',
+                                      'comment_count', 'is_liked', 'is_mine'])
         self.assertTrue(post['image'].startswith('http://testserver/media/'))
 
     def test_multipart_post_creates_post_with_image(self):
@@ -98,7 +99,7 @@ class PostApiTest(TempMediaMixin, APITestCase):
         response = self.client.post(POSTS_URL, {'text': '제목 없음'}, format='multipart')
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn('title', response.json())
-        self.assertIn('author', response.json())
+        self.assertNotIn('author', response.json())  # author는 서버가 채우므로 필수 아님
         self.assertEqual(Post.objects.count(), 1)
 
     def test_get_single_post_by_id(self):
@@ -139,6 +140,240 @@ class TokenAuthTest(APITestCase):
         token = self.client.post('/api-token-auth/', {'username': 'sunwoo', 'password': 'pw-12345!'}).json()['token']
         self.client.credentials(HTTP_AUTHORIZATION=f'Token {token}')
         self.assertEqual(self.client.get(POSTS_URL).status_code, status.HTTP_200_OK)
+
+    def test_login_response_includes_user_id_and_username(self):
+        response = self.client.post('/api-token-auth/', {'username': 'sunwoo', 'password': 'pw-12345!'})
+        self.assertEqual(response.json()['user_id'], self.user.id)
+        self.assertEqual(response.json()['username'], 'sunwoo')
+
+
+# ---------------------------------------------------------------- Task 8: 편의 기능 (로그인·삭제·조회수·좋아요·댓글)
+
+class SocialApiTestCase(TempMediaMixin, APITestCase):
+    """작성자(sunwoo)와 다른 사용자(friend) 두 계정으로 테스트한다"""
+
+    def setUp(self):
+        self.owner = User.objects.create_user('sunwoo', password='pw-12345!')
+        self.friend = User.objects.create_user('friend', password='pw-12345!')
+        self.post = Post.objects.create(author=self.owner, title='내 글', text='본문',
+                                        published_date=timezone.now())
+        self.login_as(self.owner)
+
+    def login_as(self, user):
+        token, _ = Token.objects.get_or_create(user=user)
+        self.client.credentials(HTTP_AUTHORIZATION=f'Token {token.key}')
+
+    def detail_url(self, post=None):
+        return f'{POSTS_URL}{(post or self.post).pk}/'
+
+
+@override_settings(MEDIA_ROOT=TEMP_MEDIA_ROOT)
+class LoginAuthorTest(SocialApiTestCase):
+    """기능 1. 로그인 — 업로드한 사용자가 author로 자동 지정된다"""
+
+    def test_author_is_set_to_logged_in_user(self):
+        self.login_as(self.friend)
+        response = self.client.post(POSTS_URL, {'title': 't', 'text': 't', 'image': make_image()},
+                                    format='multipart')
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.json()['author'], self.friend.id)
+        self.assertEqual(response.json()['author_name'], 'friend')
+
+    def test_author_sent_by_client_is_ignored(self):
+        self.login_as(self.friend)
+        response = self.client.post(POSTS_URL, {'author': self.owner.id, 'title': 't', 'text': 't',
+                                                'image': make_image()}, format='multipart')
+        self.assertEqual(Post.objects.get(pk=response.json()['id']).author, self.friend)
+
+    def test_is_mine_depends_on_logged_in_user(self):
+        self.assertTrue(self.client.get(self.detail_url()).json()['is_mine'])
+        self.login_as(self.friend)
+        self.assertFalse(self.client.get(self.detail_url()).json()['is_mine'])
+
+    def test_post_list_is_ordered_newest_first(self):
+        Post.objects.create(author=self.owner, title='옛날 글', text='t',
+                            published_date=timezone.now() - timedelta(days=1))
+        Post.objects.create(author=self.owner, title='새 글', text='t',
+                            published_date=timezone.now() + timedelta(seconds=1))
+        titles = [post['title'] for post in self.client.get(POSTS_URL).json()]
+        self.assertEqual(titles, ['새 글', '내 글', '옛날 글'])
+
+
+@override_settings(MEDIA_ROOT=TEMP_MEDIA_ROOT)
+class DeletePermissionTest(SocialApiTestCase):
+    """기능 5. 삭제 — 작성자만 수정·삭제할 수 있다"""
+
+    def test_author_can_delete_own_post(self):
+        self.assertEqual(self.client.delete(self.detail_url()).status_code, status.HTTP_204_NO_CONTENT)
+        self.assertFalse(Post.objects.filter(pk=self.post.pk).exists())
+
+    def test_other_user_cannot_delete_post(self):
+        self.login_as(self.friend)
+        response = self.client.delete(self.detail_url())
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertTrue(Post.objects.filter(pk=self.post.pk).exists())
+
+    def test_other_user_cannot_edit_post(self):
+        self.login_as(self.friend)
+        response = self.client.patch(self.detail_url(), {'title': '바꿈'})
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.post.refresh_from_db()
+        self.assertEqual(self.post.title, '내 글')
+
+    def test_other_user_can_still_read_post(self):
+        self.login_as(self.friend)
+        self.assertEqual(self.client.get(self.detail_url()).status_code, status.HTTP_200_OK)
+
+
+@override_settings(MEDIA_ROOT=TEMP_MEDIA_ROOT)
+class ViewCountTest(SocialApiTestCase):
+    """기능 4. 조회수 — 상세 조회할 때마다 1 증가"""
+
+    def test_new_post_has_zero_views(self):
+        self.assertEqual(self.client.get(POSTS_URL).json()[0]['view_count'], 0)
+
+    def test_detail_view_increments_view_count(self):
+        self.assertEqual(self.client.get(self.detail_url()).json()['view_count'], 1)
+        self.assertEqual(self.client.get(self.detail_url()).json()['view_count'], 2)
+        self.post.refresh_from_db()
+        self.assertEqual(self.post.view_count, 2)
+
+    def test_list_does_not_increment_view_count(self):
+        self.client.get(POSTS_URL)
+        self.post.refresh_from_db()
+        self.assertEqual(self.post.view_count, 0)
+
+    def test_view_count_cannot_be_changed_by_client(self):
+        self.client.patch(self.detail_url(), {'view_count': 999})
+        self.post.refresh_from_db()
+        self.assertEqual(self.post.view_count, 0)
+
+    def test_detail_of_missing_post_returns_404(self):
+        self.assertEqual(self.client.get(f'{POSTS_URL}999/').status_code, status.HTTP_404_NOT_FOUND)
+
+
+@override_settings(MEDIA_ROOT=TEMP_MEDIA_ROOT)
+class LikeTest(SocialApiTestCase):
+    """기능 2. 좋아요 — POST로 좋아요, DELETE로 취소. 사용자당 1회"""
+
+    def like_url(self):
+        return f'{self.detail_url()}like/'
+
+    def test_like_post(self):
+        self.login_as(self.friend)
+        response = self.client.post(self.like_url())
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.json(), {'is_liked': True, 'like_count': 1})
+
+    def test_like_twice_counts_once(self):
+        self.client.post(self.like_url())
+        self.assertEqual(self.client.post(self.like_url()).json()['like_count'], 1)
+        self.assertEqual(self.post.likes.count(), 1)
+
+    def test_unlike_post(self):
+        self.client.post(self.like_url())
+        response = self.client.delete(self.like_url())
+        self.assertEqual(response.json(), {'is_liked': False, 'like_count': 0})
+
+    def test_unlike_without_like_is_harmless(self):
+        self.assertEqual(self.client.delete(self.like_url()).json()['like_count'], 0)
+
+    def test_like_count_and_is_liked_are_per_user(self):
+        self.client.post(self.like_url())
+        self.login_as(self.friend)
+        post = self.client.get(POSTS_URL).json()[0]
+        self.assertEqual(post['like_count'], 1)
+        self.assertFalse(post['is_liked'])
+        self.client.post(self.like_url())
+        post = self.client.get(POSTS_URL).json()[0]
+        self.assertEqual((post['like_count'], post['is_liked']), (2, True))
+
+    def test_like_requires_login(self):
+        self.client.credentials()
+        self.assertEqual(self.client.post(self.like_url()).status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_like_missing_post_returns_404(self):
+        self.assertEqual(self.client.post(f'{POSTS_URL}999/like/').status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_likes_are_deleted_with_post(self):
+        self.client.post(self.like_url())
+        self.client.delete(self.detail_url())
+        self.assertEqual(User.objects.get(pk=self.owner.pk).likes.count(), 0)
+
+
+@override_settings(MEDIA_ROOT=TEMP_MEDIA_ROOT)
+class CommentTest(SocialApiTestCase):
+    """기능 3. 댓글 — 게시물별 목록·작성, 작성자만 삭제"""
+
+    def comments_url(self):
+        return f'{self.detail_url()}comments/'
+
+    def write(self, text='좋은 사진이네요'):
+        return self.client.post(self.comments_url(), {'text': text})
+
+    def test_comment_list_is_empty_at_first(self):
+        response = self.client.get(self.comments_url())
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.json(), [])
+
+    def test_write_comment(self):
+        self.login_as(self.friend)
+        response = self.write('멋져요!')
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        comment = response.json()
+        self.assertEqual(comment['text'], '멋져요!')
+        self.assertEqual(comment['author_name'], 'friend')
+        self.assertTrue(comment['is_mine'])
+        self.assertEqual(list(comment), ['id', 'post', 'author', 'author_name', 'text',
+                                         'created_date', 'is_mine'])
+
+    def test_comments_are_listed_oldest_first(self):
+        self.write('첫 댓글')
+        self.login_as(self.friend)
+        self.write('두 번째 댓글')
+        comments = self.client.get(self.comments_url()).json()
+        self.assertEqual([c['text'] for c in comments], ['첫 댓글', '두 번째 댓글'])
+        self.assertEqual([c['is_mine'] for c in comments], [False, True])
+
+    def test_empty_comment_is_rejected(self):
+        self.assertEqual(self.write('   ').status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(self.post.comments.count(), 0)
+
+    def test_comment_count_is_shown_in_post(self):
+        self.write()
+        self.write()
+        self.assertEqual(self.client.get(POSTS_URL).json()[0]['comment_count'], 2)
+
+    def test_author_can_delete_own_comment(self):
+        comment_id = self.write().json()['id']
+        response = self.client.delete(f'/api_root/Comment/{comment_id}/')
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+        self.assertEqual(self.post.comments.count(), 0)
+
+    def test_other_user_cannot_delete_comment(self):
+        comment_id = self.write().json()['id']
+        self.login_as(self.friend)
+        response = self.client.delete(f'/api_root/Comment/{comment_id}/')
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(self.post.comments.count(), 1)
+
+    def test_friend_can_comment_on_others_post(self):
+        self.login_as(self.friend)
+        self.assertEqual(self.write().status_code, status.HTTP_201_CREATED)
+
+    def test_comments_require_login(self):
+        self.client.credentials()
+        self.assertEqual(self.client.get(self.comments_url()).status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_comments_are_deleted_with_post(self):
+        self.write()
+        self.client.delete(self.detail_url())
+        self.assertEqual(User.objects.get(pk=self.owner.pk).comments.count(), 0)
+
+    def test_comment_str_shows_author_and_text(self):
+        comment_id = self.write('짧은 댓글').json()['id']
+        comment = self.post.comments.get(pk=comment_id)
+        self.assertEqual(str(comment), 'sunwoo: 짧은 댓글')
 
 
 @override_settings(MEDIA_ROOT=TEMP_MEDIA_ROOT)
