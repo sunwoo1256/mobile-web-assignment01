@@ -4,7 +4,7 @@ plugins {
     alias(libs.plugins.android.application)
 }
 
-// 서버 주소·토큰 기본값은 local.properties(git 제외)에서 읽는다. 앱 실행 중에는 ApiConfig로 변경 가능
+// 로그인 화면의 서버 주소 기본값은 local.properties(git 제외)에서 읽는다. 토큰은 로그인으로 발급받는다
 val localProperties = Properties().apply {
     val file = rootProject.file("local.properties")
     if (file.exists()) file.inputStream().use { load(it) }
@@ -26,9 +26,6 @@ android {
 
         buildConfigField("String", "DEFAULT_BASE_URL",
             "\"${localProperty("photoblog.baseUrl", "http://10.0.2.2:8000")}\"")
-        buildConfigField("String", "DEFAULT_TOKEN",
-            "\"${localProperty("photoblog.token", "")}\"")
-        buildConfigField("int", "DEFAULT_AUTHOR_ID", localProperty("photoblog.authorId", "1"))
     }
 
     buildFeatures {

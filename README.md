@@ -70,15 +70,19 @@ python manage.py runserver 0.0.0.0:8000
 
 | 메서드 | 경로 | 설명 |
 |---|---|---|
-| GET | `/api_root/Post/` | 게시물 목록 (JSON 배열, `image`는 절대 URL) |
-| POST | `/api_root/Post/` | 게시물 작성 (multipart/form-data: `author`, `title`, `text`, `image`, 선택 `published_date`) |
-| GET | `/api_root/Post/<id>/` | 게시물 단건 조회 |
-| PUT/PATCH | `/api_root/Post/<id>/` | 게시물 수정 |
-| DELETE | `/api_root/Post/<id>/` | 게시물 삭제 |
+| POST | `/api-token-auth/` | 로그인: `username`, `password` → `{"token", "user_id", "username"}` (인증 불필요) |
+| GET | `/api_root/Post/` | 게시물 목록 — **최신순**, JSON 배열, `image`는 절대 URL |
+| POST | `/api_root/Post/` | 게시물 작성 (multipart/form-data: `title`, `text`, `image`, 선택 `published_date`). **`author`는 로그인한 사용자로 자동 지정** |
+| GET | `/api_root/Post/<id>/` | 게시물 상세 — 조회할 때마다 **조회수 +1** |
+| PUT/PATCH | `/api_root/Post/<id>/` | 게시물 수정 — **작성자만** (다른 사용자는 403) |
+| DELETE | `/api_root/Post/<id>/` | 게시물 삭제 — **작성자만** (다른 사용자는 403), 좋아요·댓글도 함께 삭제 |
+| POST / DELETE | `/api_root/Post/<id>/like/` | 좋아요 / 좋아요 취소 → `{"is_liked", "like_count"}` (사용자당 1회) |
+| GET / POST | `/api_root/Post/<id>/comments/` | 댓글 목록(오래된 순) / 댓글 작성(`text`) |
+| DELETE | `/api_root/Comment/<id>/` | 댓글 삭제 — **작성자만** |
 
 `published_date`를 보내지 않으면 서버가 현재 시각으로 채워, 웹 목록에도 바로 표시된다.
 
-응답 예시:
+게시물 응답 예시 (앞의 7개 필드는 교수님 코드와 같은 순서, 뒤는 편의 기능용):
 
 ```json
 [
@@ -89,15 +93,23 @@ python manage.py runserver 0.0.0.0:8000
     "text": "본문",
     "created_date": "2026-10-16T00:02:42.982694+09:00",
     "published_date": "2026-10-16T00:02:42.982554+09:00",
-    "image": "http://127.0.0.1:8000/media/images/2026/10/16/a.jpg"
+    "image": "http://127.0.0.1:8000/media/images/2026/10/16/a.jpg",
+    "author_name": "sunwoo",
+    "view_count": 12,
+    "like_count": 3,
+    "comment_count": 2,
+    "is_liked": true,
+    "is_mine": true
   }
 ]
 ```
 
+`is_liked`(내가 좋아요를 눌렀는지), `is_mine`(내가 쓴 글인지)은 요청한 사용자 기준으로 계산된다.
+
 ### 브라우저에서 API로 게시물 작성 (보고서 ID 3)
 
 1. `runserver` 실행 후 http://127.0.0.1:8000/api_root/Post/ 접속 → 우상단 **Log in**으로 로그인
-2. 페이지 하단 **HTML form** 탭에서 Author 선택, Title/Text 입력, Image 파일 선택 → **POST**
+2. 페이지 하단 **HTML form** 탭에서 Title/Text 입력, Image 파일 선택 → **POST** (Author는 로그인한 사용자로 자동 지정)
 3. `HTTP 201 Created` 응답 화면 확인 → http://127.0.0.1:8000/ 웹 목록에도 표시됨
 
 ## 토큰 생성
@@ -113,7 +125,7 @@ python manage.py drf_create_token <username>
 
 ```powershell
 curl.exe -X POST -d "username=<id>&password=<pw>" http://127.0.0.1:8000/api-token-auth/
-# {"token":"9944b09199c62bcf9418ad846dd0e4bbdfc6ee4b"}
+# {"token":"9944b09199c62bcf9418ad846dd0e4bbdfc6ee4b","user_id":1,"username":"admin"}
 ```
 
 방법 3 — 관리자 화면: http://127.0.0.1:8000/admin/ → **인증 토큰 > 토큰(들)**
@@ -183,7 +195,7 @@ open 127.0.0.1 8000
 |---|---|
 | [`api_test_engine/photoblog_api.py`](PhotoBlogServer/api_test_engine/photoblog_api.py) | 엔진. 포토 블로그 REST API 호출·검증 클래스 `PhotoBlogApi` (`urllib`만 사용) |
 | [`api_test_engine/test_photoblog_api.py`](PhotoBlogServer/api_test_engine/test_photoblog_api.py) | 엔진 테스트. 단위 37개(서버 없이 `FakeServer`로 HTTP 대체) + 통합 9개(실제 서버) |
-| [`blog/tests.py`](PhotoBlogServer/blog/tests.py) | Django 서버 측 테스트 29개 (API·토큰·웹 뷰·모델) |
+| [`blog/tests.py`](PhotoBlogServer/blog/tests.py) | Django 서버 측 테스트 63개 (API·토큰·웹 뷰·모델 + 편의 기능: 로그인/권한/조회수/좋아요/댓글) |
 
 ### 엔진 `PhotoBlogApi`
 
@@ -202,7 +214,7 @@ CLI로 서버 하나를 통째로 검증할 수 있다 (로컬/PythonAnywhere �
 
 ```powershell
 cd PhotoBlogServer\api_test_engine
-..\venv\Scripts\python photoblog_api.py --base-url http://127.0.0.1:8000 --user <id> --password <pw> --author <user id>
+..\venv\Scripts\python photoblog_api.py --base-url http://127.0.0.1:8000 --user <id> --password <pw>
 ```
 ```
 대상 서버: http://127.0.0.1:8000
@@ -215,7 +227,7 @@ cd PhotoBlogServer\api_test_engine
 결과: 6/6 통과
 ```
 
-> `--author`는 현재 서버가 `author`를 필수로 받기 때문에 필요하다(관리자 계정은 보통 `1`). 업로드한 글은 시나리오 끝에 삭제하지만, 서버의 `media/`에 이미지 파일은 남는다(Django는 행 삭제 시 파일을 지우지 않음).
+> 서버가 `author`를 로그인한 사용자로 자동 지정하므로 `--author`(선택)는 보내도 무시된다. 업로드한 글은 시나리오 끝에 삭제하지만, 서버의 `media/`에 이미지 파일은 남는다(Django는 행 삭제 시 파일을 지우지 않음).
 
 ### 테스트 실행
 
@@ -231,7 +243,6 @@ cd api_test_engine
 $env:PHOTOBLOG_BASE_URL = "http://127.0.0.1:8000"
 $env:PHOTOBLOG_USER = "<id>"
 $env:PHOTOBLOG_PASSWORD = "<pw>"
-$env:PHOTOBLOG_AUTHOR = "1"                  # 선택, 기본 1
 ..\venv\Scripts\python test_photoblog_api.py
 
 # 2) 서버 측 테스트 (임시 DB·임시 media 사용, 실제 데이터에 영향 없음)
@@ -261,7 +272,7 @@ python -m coverage html                      # → PhotoBlogServer\htmlcov\index
 |---|---|
 | `photoblog_api.py` (엔진) | **100%** — 구문 203 / 분기 52, Miss 0 (`.coveragerc`에서 branch 측정) |
 | `test_photoblog_api.py` | 서버 실행 시 98%, 미실행 시 87% (차이는 skip된 통합 테스트) |
-| `blog` 앱 | **100%** — 290 구문, Miss 0 |
+| `blog` 앱 | **100%** — 568 구문, Miss 0 (편의 기능 포함 63개 테스트) |
 
 `api_test_engine/.coveragerc`는 분기 커버리지를 켜고, CLI 진입점(`if __name__ == '__main__':`) 한 줄만 측정에서 제외한다(`main()`은 테스트에서 직접 호출해 검증).
 
@@ -290,18 +301,15 @@ cd PhotoBlogServer\socket_server
 
 `PhotoViewer/`를 Android Studio로 연다 (compileSdk/targetSdk 34, minSdk 24, Java 11).
 
-### 서버 주소·토큰 설정
+### 로그인과 서버 선택
 
-토큰을 레포에 올리지 않기 위해 **`PhotoViewer/local.properties`**(git 제외)에 적는다. 빌드 시 `BuildConfig.DEFAULT_BASE_URL` / `DEFAULT_TOKEN`으로 들어가 앱의 기본값이 된다.
+앱을 실행하면 **로그인 화면**이 나온다. 서버 계정(아이디·비밀번호)으로 로그인하면 토큰을 발급받아 저장하고, 다음 실행부터는 자동 로그인된다. 토큰을 코드나 빌드 설정에 적지 않는다.
 
-```properties
-photoblog.baseUrl=http://10.0.2.2:8000
-photoblog.token=<python manage.py drf_create_token <user> 로 만든 토큰>
-```
-
-- 에뮬레이터에서 PC의 `127.0.0.1`은 `10.0.2.2`다. Django는 `python manage.py runserver 0.0.0.0:8000`으로 실행한다.
-- 값은 [`ApiConfig`](PhotoViewer/app/src/main/java/com/example/imageviewdemo/ApiConfig.java)에서 한 곳으로 관리한다. SharedPreferences에 저장된 값이 있으면 그것을, 없으면 위 기본값을 쓴다(설정 화면은 Task 8).
-- `local.properties`를 바꾼 뒤에는 다시 빌드해야 반영된다.
+- **서버**: `로컬`(`http://10.0.2.2:8000`) / `클라우드`(`https://sunwoo.pythonanywhere.com`) / `직접 입력` 중 선택. 에뮬레이터에서 PC의 `127.0.0.1`은 `10.0.2.2`이므로 Django는 `python manage.py runserver 0.0.0.0:8000`으로 실행한다.
+- 계정은 서버에서 `python manage.py createsuperuser` 또는 관리자 화면(`/admin/` → 사용자 추가)으로 만든다.
+- 로그아웃: 피드 우상단 ⋮ → 로그아웃.
+- 서버 주소·토큰·사용자 이름은 [`ApiConfig`](PhotoViewer/app/src/main/java/com/example/imageviewdemo/ApiConfig.java)(SharedPreferences)에서 한 곳으로 관리한다.
+- (선택) 로그인 화면의 서버 기본값은 `PhotoViewer/local.properties`(git 제외)로 바꿀 수 있다: `photoblog.baseUrl=http://10.0.2.2:8000`
 
 ### 빌드 (명령줄)
 
@@ -326,24 +334,21 @@ $env:JAVA_HOME = "C:\Program Files\Android\Android Studio\jbr"
 | `title` | 제목 EditText (최대 200자, 모델 `max_length=200`) | 필수 |
 | `text` | 본문 EditText (여러 줄) | 필수 (모델이 빈 값 불가) |
 | `image` | 이미지 선택 버튼(Photo Picker) + 미리보기 | 필수 |
-| `author` | (자동) `local.properties`의 `photoblog.authorId` | 로그인 기능 전까지 |
+| `author` | (자동) 서버가 로그인한 사용자로 지정 | 앱은 보내지 않음 |
 | `published_date` | (자동) 현재 시각 ISO-8601 | 서버 보정과 이중 안전장치 |
 
-- 세 필수 항목이 모두 채워져야 **업로드** 버튼이 활성화되고, 상태 문구로 안내한다.
+- 세 필수 항목이 모두 채워져야 **게시하기** 버튼이 활성화되고, 상태 문구로 안내한다.
 - 이미지 선택은 `ActivityResultContracts.PickVisualMedia`(Android Photo Picker) — 저장소 권한 불필요.
 - 업로드 중에는 ProgressBar 표시, 입력칸·버튼 비활성화(중복 업로드 방지).
 - `201 Created` → "업로드 성공!" 토스트 → 화면 종료 → 메인 목록 **자동 재동기화**.
 - 실패 → 서버 오류 본문(`getErrorStream()`) 또는 연결 오류를 화면에 표시하고 다시 시도할 수 있게 버튼을 되살린다.
 
-`local.properties`에 author 기본값을 추가한다:
-
-```properties
-photoblog.authorId=1        # 토큰 주인의 사용자 id
-```
-
 ### 클라이언트 단위 테스트
 
-multipart 바디 생성(`MultipartBody`)은 Android 의존성이 없어 JVM에서 테스트한다 (한글 UTF-8, 파트 순서·경계).
+Android 의존성이 없는 클래스는 JVM에서 테스트한다.
+
+- `MultipartBodyTest` (5개): multipart 바디의 한글 UTF-8, 파트 순서·경계
+- `TimeUtilsTest` (5개): ISO-8601 파싱(시간대·소수 초), "방금 전 / N분 전 / N시간 전 / N일 전 / 날짜" 변환
 
 ```powershell
 cd PhotoViewer
@@ -432,20 +437,17 @@ API 검증 엔진으로 클라우드 서버 전체 시나리오를 한 번에 �
 
 ```powershell
 cd PhotoBlogServer\api_test_engine
-..\venv\Scripts\python photoblog_api.py --base-url https://<id>.pythonanywhere.com --user <id> --password <pw> --author 1
+..\venv\Scripts\python photoblog_api.py --base-url https://<id>.pythonanywhere.com --user <id> --password <pw>
 ```
 
 ### 7. 앱을 클라우드 서버에 연결
 
-`PhotoViewer/local.properties`를 클라우드 값으로 바꾸고 다시 빌드·설치한다 (설정 화면은 Task 8에서 추가).
-
-```properties
-photoblog.baseUrl=https://<id>.pythonanywhere.com
-photoblog.token=<클라우드 서버에서 drf_create_token으로 만든 토큰>
-photoblog.authorId=1
-```
+앱 로그인 화면에서 서버를 **클라우드**(또는 `직접 입력`에 `https://<id>.pythonanywhere.com`)로 고르고, 클라우드 서버의 계정으로 로그인한다. 다시 빌드할 필요가 없다. 이미 로그인되어 있으면 ⋮ → 로그아웃 후 서버를 바꾼다.
 
 ### 코드 수정 후 재배포
+
+> Task 8(편의 기능)에서 모델이 추가되었으므로(`0005` 마이그레이션) 이전에 배포했다면 아래 절차를 꼭 실행한다.
+
 
 ```bash
 cd ~/PhotoBlog && git pull
@@ -469,7 +471,71 @@ python manage.py collectstatic --noinput
 
 ## Client 편의 기능
 
-> 작성 예정 (Task 8)
+포토 블로그에서 가장 직관적인 상호작용 5가지를 구현했다. 서버 수정이 필요한 기능은 서버/클라이언트를 나눠 적는다. 서버 API는 TDD(테스트 먼저 → 구현)로 만들었다 (`d083274` 빨강 → `66ac97a` 초록, `blog` 테스트 63개·커버리지 100%).
+
+| # | 기능 | 한 줄 정의 |
+|---|---|---|
+| 1 | 로그인 | 아이디·비밀번호로 로그인하고, 내가 누구인지에 따라 글쓴이·좋아요·삭제 권한이 정해진다 |
+| 2 | 좋아요 | 하트 버튼 또는 사진 더블탭으로 게시물에 좋아요를 누르고 취소한다 |
+| 3 | 댓글 | 게시물 상세 화면에서 댓글을 읽고, 쓰고, 내 댓글을 지운다 |
+| 4 | 조회수 | 게시물 상세를 열 때마다 조회수가 올라가고 목록·상세에 표시된다 |
+| 5 | 삭제 | 내가 쓴 게시물만 확인 후 삭제할 수 있다 |
+
+### 1. 로그인
+
+- **정의**: 서버 계정으로 로그인해 토큰을 발급받아 저장하고, 이후 모든 요청에 사용한다. 하드코딩된 토큰을 없앴다.
+- **서버**
+  - `/api-token-auth/` 응답에 `user_id`, `username` 추가 (`LoginToken` 뷰)
+  - 게시물 `author`를 **읽기 전용**으로 바꾸고 `perform_create`에서 `request.user`로 지정 → 클라이언트가 author를 보내도 무시
+  - 응답에 `author_name`(작성자 이름), `is_mine`(내 글 여부) 추가
+- **클라이언트**: `LoginActivity`(앱 시작 화면)
+  - 아이디·비밀번호 입력(비밀번호 보기 토글), 서버 선택 칩(로컬/클라우드/직접 입력)
+  - 성공 시 토큰·사용자 이름을 SharedPreferences에 저장 → 다음 실행부터 **자동 로그인**
+  - 실패 메시지 구분: 아이디/비밀번호 오류(400) / 서버 연결 실패(주소 표시)
+  - 피드 상단에 `@사용자 · 서버` 표시, ⋮ → **로그아웃**
+  - 토큰이 만료·무효(401)면 자동으로 로그인 화면으로 이동
+- **사용법**: 앱 실행 → 아이디/비밀번호 입력 → 서버 선택 → 로그인
+
+### 2. 좋아요
+
+- **정의**: 게시물마다 사용자당 한 번 좋아요를 누르거나 취소할 수 있고, 좋아요 수와 내가 눌렀는지가 보인다.
+- **서버**: `Like` 모델(게시물·사용자 **unique**), `POST`/`DELETE /api_root/Post/<id>/like/` → `{"is_liked", "like_count"}`. 목록·상세에 `like_count`, `is_liked`(요청한 사용자 기준). 게시물 삭제 시 함께 삭제
+- **클라이언트**
+  - 카드·상세의 하트 버튼: 빈 하트 ↔ 빨간 하트, 누를 때 튀어 오르는 애니메이션
+  - **사진 더블탭**으로 좋아요 + 사진 가운데 큰 하트가 커졌다 사라지는 효과(인스타그램 방식). 이미 누른 글은 다시 눌러도 취소되지 않음
+  - 화면을 먼저 바꾸고(낙관적 업데이트) 서버 응답으로 개수를 맞추며, 실패하면 원래대로 되돌리고 안내
+- **사용법**: 하트를 누르거나 사진을 두 번 탭한다. 다시 하트를 누르면 취소
+
+### 3. 댓글
+
+- **정의**: 게시물에 댓글을 남기고 다른 사용자의 댓글을 읽는다. 내 댓글은 지울 수 있다.
+- **서버**: `Comment` 모델(게시물·작성자·내용·작성일), `GET`/`POST /api_root/Post/<id>/comments/`(오래된 순, 빈 댓글 400), `DELETE /api_root/Comment/<id>/`(작성자만, 다른 사용자는 403). 목록에 `comment_count`
+- **클라이언트**: 상세 화면(`DetailActivity`) 아래 댓글 목록 — 작성자 아바타·이름·"N분 전"·내용, 내 댓글에만 "삭제". 화면 하단에 고정된 입력창과 보내기 버튼(입력이 없으면 비활성). 카드의 💬 버튼을 누르면 상세로 가서 입력창에 바로 포커스
+- **사용법**: 게시물을 누르거나 💬 버튼 → 아래 "댓글 달기..."에 입력 → 보내기. 내 댓글의 "삭제" → 확인
+
+### 4. 조회수
+
+- **정의**: 게시물 상세를 볼 때마다 조회수가 1 늘고, 목록과 상세에 👁 숫자로 보인다.
+- **서버**: `Post.view_count` 필드(마이그레이션 `0005`), 상세 조회(`GET /Post/<id>/`)에서 DB의 `F('view_count') + 1`로 증가(동시 요청에도 정확). 목록 조회는 증가하지 않으며, 클라이언트가 값을 바꿀 수 없다(읽기 전용)
+- **클라이언트**: 카드 오른쪽 아래와 상세 화면에 👁 조회수. 상세에서 돌아오면 목록을 다시 동기화해 바뀐 조회수·좋아요·댓글 수를 반영
+- **사용법**: 게시물을 열면 자동으로 반영된다
+
+### 5. 삭제
+
+- **정의**: 내가 쓴 게시물만 확인 창을 거쳐 삭제한다. 다른 사람 글에는 삭제 메뉴가 보이지 않는다.
+- **서버**: `IsAuthorOrReadOnly` 권한 — 조회는 누구나, 수정·삭제는 작성자만(다른 사용자는 403). 게시물을 지우면 좋아요·댓글도 함께 삭제
+- **클라이언트**: 내 글 카드에만 ⋮ 버튼(또는 카드 길게 누르기) → 삭제 → "게시물을 삭제할까요?" 확인 → 목록에서 바로 사라지고 "게시물을 삭제했습니다." 알림. 상세 화면 툴바의 🗑 버튼으로도 삭제
+- **사용법**: 내 게시물의 ⋮ → 삭제 → 확인
+
+### 함께 개선한 화면 (편의 기능 개수에는 포함하지 않음)
+
+- **디자인 전면 개편** (Material 3): 보라→핑크→오렌지 그라데이션 브랜드 색, 카드형 피드(아바타·정사각형 사진·♥💬👁), 원본 비율 사진의 상세 화면, 사진부터 고르는 업로드 화면, 다크 모드 색상
+- 당겨서 새로고침, 앱 시작 시 자동 동기화, 게시물이 없을 때 안내 화면
+- 상대 시간 표시("방금 전", "3시간 전"), 이미지 메모리 캐시(LruCache)로 새로고침 시 다시 받지 않음
+
+### 시연 팁
+
+좋아요·댓글이 **사용자별로** 동작하는 것을 보이려면 계정이 두 개 필요하다. 관리자 화면(`/admin/` → 사용자 → 추가)에서 두 번째 계정을 만들고, 한 계정으로 글을 올린 뒤 다른 계정으로 로그인해 좋아요·댓글을 남긴다(다른 계정의 글에는 삭제 메뉴가 없음).
 
 ## 구현 노트
 
@@ -509,13 +575,13 @@ python manage.py collectstatic --noinput
 
 - Android 프로젝트는 Groovy `build.gradle`이 아닌 Kotlin DSL(`build.gradle.kts`) + 버전 카탈로그(`gradle/libs.versions.toml`)를 사용한다. 의존성은 이 두 파일에 추가한다.
 - 라이브러리 버전: `appcompat 1.7.0`, `material 1.12.0`, `activity 1.9.3`(compileSdk 34 호환), `recyclerview 1.3.2`, `swiperefreshlayout 1.1.0` 추가. 템플릿 버전으로도 빌드 문제는 없었으며 `resolutionStrategy.force`는 필요하지 않았다. (`coreKtx`는 Java 템플릿에 없어 추가하지 않음)
-- **서버 주소·토큰 하드코딩 제거**: 슬라이드는 `MainActivity`에 `site_url`과 토큰을 직접 적지만, `ApiConfig`(SharedPreferences) + `local.properties` → `BuildConfig` 기본값으로 관리한다. 토큰이 레포에 올라가지 않고, 로컬/PythonAnywhere 전환이 쉽다.
+- **서버 주소·토큰 하드코딩 제거**: 슬라이드는 `MainActivity`에 `site_url`과 토큰을 직접 적지만, 서버 주소·토큰은 `ApiConfig`(SharedPreferences)에서 관리한다. Task 5~6에서는 `local.properties` → `BuildConfig` 기본 토큰을 썼고, Task 8에서 **로그인 화면으로 토큰을 발급받는 방식**으로 바꿔 빌드 설정의 토큰도 없앴다.
 - 슬라이드 19의 `private class. CloadImage` 오타를 수정했다(`private class CloadImage`).
 - 인증 헤더는 `Token <토큰>` 형식이다(서버가 DRF `TokenAuthentication` 사용).
 - 이미지는 `BitmapFactory.Options.inJustDecodeBounds`로 크기를 먼저 읽고 화면 너비에 맞춰 `inSampleSize`로 줄여 디코딩한다(큰 사진의 OOM 방지). 이미지 요청에는 토큰을 붙이지 않는다(media는 인증 없이 제공).
 - 네트워크 오류·HTTP 오류를 화면에 표시하고, 연결/읽기 타임아웃(10초/15초)을 둔다.
-- 템플릿의 EdgeToEdge 코드가 루트 padding을 시스템 바 크기로 덮어써서 레이아웃 여백(8dp)이 사라지므로, 기본 여백 + 시스템 바로 계산하게 했다.
-- 앱 표시 이름을 `imageviewdemo`에서 `PhotoViewer`로 바꿨다(패키지명은 그대로 `com.example.imageviewdemo`).
+- 템플릿의 EdgeToEdge 코드는 루트 padding을 시스템 바 크기로 덮어써서 레이아웃 여백이 사라지는 문제가 있었다. Task 8 리디자인에서 EdgeToEdge를 쓰지 않고(targetSdk 34에서는 필수 아님) 상태바 색을 테마로 지정하는 방식으로 바꿨다.
+- 앱 표시 이름을 `imageviewdemo`에서 `PhotoBlog`로 바꿨다(패키지명은 그대로 `com.example.imageviewdemo`).
 - AsyncTask는 deprecated지만 수업 코드와의 일관성을 위해 사용했다.
 - **업로드(`PutPost`)**: 슬라이드 19의 주석 부분을 별도 화면 `UploadActivity`로 구현했다.
   - multipart 바디는 `MultipartBody` 클래스로 분리했다. 텍스트를 `DataOutputStream.writeBytes()`로 쓰면 각 문자의 하위 1바이트만 기록되어 한글이 깨지므로 `getBytes(UTF_8)`로 기록한다(JVM 단위 테스트로 검증).
@@ -525,4 +591,14 @@ python manage.py collectstatic --noinput
   - 검증: 3000×2000 + EXIF 90° 테스트 사진 → 서버에 1067×1600 JPEG로 저장됨을 확인.
 - 업로드 중 판단을 `AsyncTask.getStatus()`로 하면 `onPostExecute` 실행 중에도 `FINISHED`가 아니라서, 실패 후 버튼이 비활성으로 남는 문제가 있어 별도 플래그로 관리한다.
 - Photo Picker에서 돌아오면 입력칸 포커스로 키보드가 다시 올라와 업로드 버튼을 가리므로 이미지 선택 후 키보드를 내린다.
-- 업로드 후 자동 재동기화 시에는 "Download" 토스트를 띄우지 않아 "업로드 성공!" 토스트가 가려지지 않게 했다.
+- 업로드 후 자동 재동기화 시 "업로드 성공!" 토스트가 가려지지 않게 했다(Task 8에서 "Download" 토스트는 새로고침 표시로 대체).
+
+**Task 8 (편의 기능·리디자인)**
+
+- **어댑터**: 슬라이드의 `List<Bitmap>` 기반 `ImageAdapter`를 게시물 정보(작성자·제목·본문·좋아요·댓글·조회수)를 담는 `Post` 객체 기반 `PostAdapter`로 확장했다.
+- **동기화(`CloadImage`)**: 슬라이드처럼 목록 JSON을 받는 AsyncTask 이름을 유지하되, 이미지는 카드마다 `ImageLoader`가 따로 받는다(목록이 먼저 뜨고 사진이 순서대로 채워짐, LruCache로 재사용). 좋아요·댓글 등 새 API 호출은 `ExecutorService` + `Handler`(`Async`)로 구현했다.
+- 시작 화면을 `LoginActivity`로 바꿨다(로그인되어 있으면 바로 피드). 401 응답을 받으면 저장된 토큰을 지우고 로그인 화면으로 보낸다.
+- 좋아요는 화면을 먼저 바꾸고 서버 응답으로 확정하는 **낙관적 업데이트**. 좋아요·댓글 수만 바뀔 때는 RecyclerView payload로 해당 줄만 다시 그려 이미지가 깜박이지 않게 했다.
+- 날짜는 `java.time`(API 26+)이 minSdk 24에서 쓸 수 없어 ISO-8601을 직접 파싱해 상대 시간으로 표시한다(`TimeUtils`, 단위 테스트).
+- Material 3 그림자 카드는 primary 색을 섞어(elevation overlay) 핑크빛이 돌아서 `elevationOverlayEnabled=false`로 껐다. 툴바 로고는 Material 3 TextAppearance가 `app:fontFamily`를 우선하므로 `android:fontFamily`와 함께 지정했다.
+- 에뮬레이터 확인: 두 계정(sunwoo, friend)으로 로그인·서버 직접 입력·좋아요(버튼/더블탭, 사용자별 상태)·댓글 작성·업로드(작성자 자동 지정)·내 글 삭제(남의 글엔 메뉴 없음)를 확인했다.

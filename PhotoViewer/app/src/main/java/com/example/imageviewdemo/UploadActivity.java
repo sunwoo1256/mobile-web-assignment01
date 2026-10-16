@@ -18,7 +18,6 @@ import android.view.inputmethod.InputMethodManager;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.ImageView;
-import android.widget.ProgressBar;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -26,6 +25,8 @@ import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.PickVisualMediaRequest;
 import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.appcompat.app.AppCompatActivity;
+
+import com.google.android.material.appbar.MaterialToolbar;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -47,10 +48,12 @@ public class UploadActivity extends AppCompatActivity {
 
     private EditText editTitle;
     private EditText editText;
-    private Button btnPickImage;
+    private View imageCard;
+    private View imagePlaceholder;
+    private View chipChangeImage;
     private Button btnUpload;
     private ImageView imagePreview;
-    private ProgressBar progressBar;
+    private View progressBar;
     private TextView textStatus;
 
     private Uri selectedImageUri;
@@ -71,15 +74,21 @@ public class UploadActivity extends AppCompatActivity {
 
         editTitle = findViewById(R.id.editTitle);
         editText = findViewById(R.id.editText);
-        btnPickImage = findViewById(R.id.btnPickImage);
+        imageCard = findViewById(R.id.imageCard);
+        imagePlaceholder = findViewById(R.id.imagePlaceholder);
+        chipChangeImage = findViewById(R.id.chipChangeImage);
         btnUpload = findViewById(R.id.btnUpload);
         imagePreview = findViewById(R.id.imagePreview);
         progressBar = findViewById(R.id.progressBar);
         textStatus = findViewById(R.id.textStatus);
 
-        btnPickImage.setOnClickListener(v -> pickImage.launch(new PickVisualMediaRequest.Builder()
+        ((MaterialToolbar) findViewById(R.id.toolbar)).setNavigationOnClickListener(v -> finish());
+        // 사진 카드(또는 "사진 변경")를 누르면 Photo Picker
+        View.OnClickListener pick = v -> pickImage.launch(new PickVisualMediaRequest.Builder()
                 .setMediaType(ActivityResultContracts.PickVisualMedia.ImageOnly.INSTANCE)
-                .build()));
+                .build());
+        imageCard.setOnClickListener(pick);
+        chipChangeImage.setOnClickListener(pick);
         btnUpload.setOnClickListener(this::onClickUpload);
         TextWatcher inputWatcher = new TextWatcher() {
             @Override
@@ -114,7 +123,9 @@ public class UploadActivity extends AppCompatActivity {
     private void setSelectedImage(Uri uri) {
         selectedImageUri = uri;
         imagePreview.setImageURI(uri);
-        btnPickImage.setText(R.string.btn_change_image);
+        imagePreview.setVisibility(View.VISIBLE);
+        imagePlaceholder.setVisibility(View.GONE);
+        chipChangeImage.setVisibility(View.VISIBLE);
         // Photo Picker에서 돌아오면 입력칸 포커스로 키보드가 다시 올라와 업로드 버튼을 가리므로 내린다
         View focused = getCurrentFocus();
         if (focused != null) {
@@ -149,15 +160,16 @@ public class UploadActivity extends AppCompatActivity {
         if (uploading) {
             return; // 업로드 중 중복 클릭 방지
         }
-        new PutPost(getContentResolver(), ApiConfig.getToken(this), ApiConfig.getAuthorId(this),
+        new PutPost(getContentResolver(), ApiConfig.getToken(this),
                 editTitle.getText().toString().trim(), editText.getText().toString(), selectedImageUri)
                 .execute(ApiConfig.getPostsUrl(this));
     }
 
     private void setUploading(boolean uploading) {
         this.uploading = uploading;
-        progressBar.setVisibility(uploading ? View.VISIBLE : View.GONE);
-        btnPickImage.setEnabled(!uploading);
+        progressBar.setVisibility(uploading ? View.VISIBLE : View.INVISIBLE);
+        imageCard.setEnabled(!uploading);
+        chipChangeImage.setEnabled(!uploading);
         editTitle.setEnabled(!uploading);
         editText.setEnabled(!uploading);
         updateUploadButton();
@@ -170,16 +182,14 @@ public class UploadActivity extends AppCompatActivity {
     private class PutPost extends AsyncTask<String, Void, Boolean> {
         private final ContentResolver resolver;
         private final String token;
-        private final int authorId;
         private final String title;
         private final String text;
         private final Uri imageUri;
         private String resultMessage;
 
-        PutPost(ContentResolver resolver, String token, int authorId, String title, String text, Uri imageUri) {
+        PutPost(ContentResolver resolver, String token, String title, String text, Uri imageUri) {
             this.resolver = resolver;
             this.token = token;
-            this.authorId = authorId;
             this.title = title;
             this.text = text;
             this.imageUri = imageUri;
@@ -198,7 +208,6 @@ public class UploadActivity extends AppCompatActivity {
                 String fileName = jpegFileName(resolver, imageUri);
 
                 MultipartBody multipart = new MultipartBody()
-                        .addText("author", String.valueOf(authorId))
                         .addText("title", title)
                         .addText("text", text)
                         .addText("published_date", nowIso8601())
@@ -225,7 +234,7 @@ public class UploadActivity extends AppCompatActivity {
                 }
                 InputStream error = conn.getErrorStream();
                 String errorBody = error == null ? ""
-                        : new String(MainActivity.readAll(error), StandardCharsets.UTF_8);
+                        : new String(ImageUtils.readAll(error), StandardCharsets.UTF_8);
                 resultMessage = "업로드 실패 (HTTP " + responseCode + ")\n" + errorBody;
                 Log.w(TAG, resultMessage);
                 return false;
@@ -287,14 +296,14 @@ public class UploadActivity extends AppCompatActivity {
             if (in == null) {
                 throw new IOException("이미지를 열 수 없습니다.");
             }
-            original = MainActivity.readAll(in);
+            original = ImageUtils.readAll(in);
         }
 
         BitmapFactory.Options options = new BitmapFactory.Options();
         options.inJustDecodeBounds = true;
         BitmapFactory.decodeByteArray(original, 0, original.length, options);
         int longSide = Math.max(options.outWidth, options.outHeight);
-        options.inSampleSize = MainActivity.calculateInSampleSize(longSide, MAX_IMAGE_SIDE);
+        options.inSampleSize = ImageUtils.calculateInSampleSize(longSide, MAX_IMAGE_SIDE);
         options.inJustDecodeBounds = false;
         Bitmap bitmap = BitmapFactory.decodeByteArray(original, 0, original.length, options);
         if (bitmap == null) {

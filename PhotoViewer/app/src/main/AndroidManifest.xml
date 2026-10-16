@@ -15,15 +15,26 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.Imageviewdemo"
         tools:targetApi="31">
+        <!-- 시작 화면: 로그인되어 있으면 바로 피드로 이동 -->
         <activity
-            android:name=".MainActivity"
-            android:exported="true">
+            android:name=".LoginActivity"
+            android:exported="true"
+            android:theme="@style/Theme.Imageviewdemo.Login"
+            android:windowSoftInputMode="adjustResize">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
 
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <activity
+            android:name=".MainActivity"
+            android:exported="false" />
+        <activity
+            android:name=".DetailActivity"
+            android:exported="false"
+            android:parentActivityName=".MainActivity"
+            android:windowSoftInputMode="adjustResize" />
         <activity
             android:name=".UploadActivity"
             android:exported="false"
