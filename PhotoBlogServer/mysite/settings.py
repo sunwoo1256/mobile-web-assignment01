@@ -10,6 +10,7 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/6.0/ref/settings/
 """
 
+import os
 from pathlib import Path
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -19,13 +20,22 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
 
+# 배포(PythonAnywhere)에서는 WSGI 파일에서 환경변수로 지정한다. 기본값은 로컬 개발용.
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-of3ij*#ideq(9y+_#hdr5u=&b@_3jr_hnsp(#y+e*dpd_m*!hr'
+SECRET_KEY = os.environ.get(
+    'DJANGO_SECRET_KEY',
+    'django-insecure-of3ij*#ideq(9y+_#hdr5u=&b@_3jr_hnsp(#y+e*dpd_m*!hr',
+)
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = os.environ.get('DJANGO_DEBUG', 'True').lower() in ('true', '1', 'yes')
 
 ALLOWED_HOSTS = ['127.0.0.1', 'localhost', '10.0.2.2', '.pythonanywhere.com']
+
+# PythonAnywhere는 https 앞단 프록시를 거치므로 원래 요청이 https였음을 인식하게 한다
+# (이미지 절대 URL이 https로 만들어지고, 관리자/브라우저블 API 로그인의 CSRF Origin 검사가 통과됨)
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+CSRF_TRUSTED_ORIGINS = ['https://*.pythonanywhere.com']
 
 
 # Application definition

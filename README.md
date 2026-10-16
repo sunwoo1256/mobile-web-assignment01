@@ -352,7 +352,120 @@ cd PhotoViewer
 
 ## PythonAnywhere 배포
 
-> 작성 예정 (Task 7)
+아래에서 `<id>`는 PythonAnywhere 사용자명, `<repo>`는 GitHub 레포 주소다. 배포 주소는 `https://<id>.pythonanywhere.com`.
+
+### 0. 사전 준비
+
+- 이 레포를 GitHub에 push해 둔다 (PythonAnywhere에서 `git clone`).
+- Django 6.1은 **Python 3.12 이상**이 필요하다. PythonAnywhere **Account → System image**가 3.12를 지원하는 이미지인지 확인한다.
+
+### 1. Bash 콘솔 — 코드 받기·설치
+
+PythonAnywhere **Consoles → Bash**:
+
+```bash
+git clone <repo> ~/PhotoBlog
+mkvirtualenv --python=python3.12 photoblog        # 가상환경 생성 + 활성화 (프롬프트에 (photoblog))
+pip install -r ~/PhotoBlog/PhotoBlogServer/requirements.txt
+```
+
+### 2. DB·관리자·토큰·정적 파일
+
+```bash
+cd ~/PhotoBlog/PhotoBlogServer
+python manage.py migrate
+python manage.py createsuperuser
+python manage.py drf_create_token <username>      # 출력된 토큰을 앱 설정에 사용
+python manage.py collectstatic --noinput          # → staticfiles/
+```
+
+### 3. Web 탭 — 웹 앱 생성
+
+1. **Web → Add a new web app** → 도메인 확인 → **Manual configuration** (Django 자동 설정 아님) → **Python 3.12**
+2. **Virtualenv**: `/home/<id>/.virtualenvs/photoblog`
+3. **Source code**: `/home/<id>/PhotoBlog/PhotoBlogServer`
+
+### 4. WSGI 파일
+
+Web 탭의 **WSGI configuration file** 링크(`/var/www/<id>_pythonanywhere_com_wsgi.py`)를 열어 **전체를 아래로 교체**한다.
+
+```python
+import os
+import sys
+
+path = '/home/<id>/PhotoBlog/PhotoBlogServer'
+if path not in sys.path:
+    sys.path.insert(0, path)
+
+os.environ['DJANGO_SETTINGS_MODULE'] = 'mysite.settings'
+os.environ['DJANGO_DEBUG'] = 'False'
+os.environ['DJANGO_SECRET_KEY'] = '<아래 명령으로 만든 임의의 긴 문자열>'
+
+from django.core.wsgi import get_wsgi_application
+application = get_wsgi_application()
+```
+
+SECRET_KEY 만들기 (Bash 콘솔, 가상환경 활성 상태):
+
+```bash
+python -c "from django.core.management.utils import get_random_secret_key; print(get_random_secret_key())"
+```
+
+### 5. Static files 매핑
+
+Web 탭 **Static files**에 두 줄을 추가한다. **`/media/`를 빠뜨리면 앱과 웹에서 이미지가 뜨지 않는다** (`DEBUG=False`에서는 Django가 media를 직접 제공하지 않음).
+
+| URL | Directory |
+|---|---|
+| `/static/` | `/home/<id>/PhotoBlog/PhotoBlogServer/staticfiles` |
+| `/media/` | `/home/<id>/PhotoBlog/PhotoBlogServer/media` |
+
+### 6. Reload 후 확인
+
+Web 탭 **Reload** → 브라우저에서 확인:
+
+- `https://<id>.pythonanywhere.com/` — 웹 목록
+- `https://<id>.pythonanywhere.com/api_root/Post/` — 로그인 후 API (게시물 `image`가 `https://` 절대 URL인지)
+- `https://<id>.pythonanywhere.com/admin/` — 관리자 로그인
+
+API 검증 엔진으로 클라우드 서버 전체 시나리오를 한 번에 확인할 수 있다 (로컬 PC에서 실행):
+
+```powershell
+cd PhotoBlogServer\api_test_engine
+..\venv\Scripts\python photoblog_api.py --base-url https://<id>.pythonanywhere.com --user <id> --password <pw> --author 1
+```
+
+### 7. 앱을 클라우드 서버에 연결
+
+`PhotoViewer/local.properties`를 클라우드 값으로 바꾸고 다시 빌드·설치한다 (설정 화면은 Task 8에서 추가).
+
+```properties
+photoblog.baseUrl=https://<id>.pythonanywhere.com
+photoblog.token=<클라우드 서버에서 drf_create_token으로 만든 토큰>
+photoblog.authorId=1
+```
+
+### 코드 수정 후 재배포
+
+```bash
+cd ~/PhotoBlog && git pull
+workon photoblog
+cd PhotoBlogServer
+python manage.py migrate
+python manage.py collectstatic --noinput
+```
+
+→ Web 탭 **Reload**.
+
+### 문제 해결
+
+| 증상 | 확인할 것 |
+|---|---|
+| `DisallowedHost` / 400 | `ALLOWED_HOSTS`에 `.pythonanywhere.com` 있음. 도메인 철자 확인 |
+| 웹은 되는데 이미지가 안 뜸 | Static files의 `/media/` 매핑 |
+| 관리자 화면 CSS 깨짐 | `collectstatic` 실행 여부, `/static/` 매핑 |
+| 500 Internal Server Error | Web 탭의 **Error log** |
+| `ModuleNotFoundError: mysite` | WSGI 파일의 `path`가 `.../PhotoBlogServer`(manage.py가 있는 폴더)인지 |
 
 ## Client 편의 기능
 
@@ -383,6 +496,12 @@ cd PhotoViewer
 
 - 초록 단계 구현 중 테스트용 `FakeServer`가 `json.dumps` 기본값(`ensure_ascii=True`)으로 한글을 `\uXXXX`로 내보내 실패한 테스트 2건이 있었다. 실제 DRF 서버는 UTF-8 원문을 보내므로(telnet으로 확인) 가짜 서버를 `ensure_ascii=False`로 고쳤다.
 - `blog/tests.py`는 Task 0에서 이미 구현한 서버 기능을 검증하므로 빨강 단계 없이 작성했다. 이후 서버 기능(Task 8)은 테스트를 먼저 추가한다.
+
+### 배포
+
+- `SECRET_KEY`, `DEBUG`는 환경변수 `DJANGO_SECRET_KEY`, `DJANGO_DEBUG`에서 읽는다. 환경변수가 없으면 교수님 코드의 기존 값(로컬 개발용, `DEBUG=True`)을 그대로 쓴다.
+- PythonAnywhere는 https 프록시 뒤에서 동작하므로 `SECURE_PROXY_SSL_HEADER`를 지정해 원래 요청이 https임을 인식하게 했다. 그래야 API 응답의 `image` URL이 `https://`로 만들어지고, 로그인 폼의 CSRF Origin 검사도 통과한다(`CSRF_TRUSTED_ORIGINS = ['https://*.pythonanywhere.com']`도 함께 지정).
+- `manage.py check --deploy`의 HSTS / `SECURE_SSL_REDIRECT` / secure 쿠키 경고 4건은 적용하지 않았다. 과제용 서버이고, 에뮬레이터 앱이 로컬 http 서버와 같은 코드를 쓰기 때문이다.
 
 > 알려진 동작(미수정): 교수님 코드의 `post_edit`은 수정할 때마다 `author`를 수정한 사용자로, `published_date`를 수정 시각으로 덮어쓴다. 과제 범위 밖이라 그대로 둔다.
 
