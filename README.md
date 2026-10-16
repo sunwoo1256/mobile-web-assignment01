@@ -352,11 +352,11 @@ cd PhotoViewer
 
 ## PythonAnywhere 배포
 
-아래에서 `<id>`는 PythonAnywhere 사용자명, `<repo>`는 GitHub 레포 주소다. 배포 주소는 `https://<id>.pythonanywhere.com`.
+아래에서 `<id>`는 PythonAnywhere 사용자명이다. 배포 주소는 `https://<id>.pythonanywhere.com`.
 
 ### 0. 사전 준비
 
-- 이 레포를 GitHub에 push해 둔다 (PythonAnywhere에서 `git clone`).
+- 레포: https://github.com/sunwoo1256/mobile-web-assignment01 (PythonAnywhere에서 `git clone`)
 - Django 6.1은 **Python 3.12 이상**이 필요하다. PythonAnywhere **Account → System image**가 3.12를 지원하는 이미지인지 확인한다.
 
 ### 1. Bash 콘솔 — 코드 받기·설치
@@ -364,7 +364,7 @@ cd PhotoViewer
 PythonAnywhere **Consoles → Bash**:
 
 ```bash
-git clone <repo> ~/PhotoBlog
+git clone https://github.com/sunwoo1256/mobile-web-assignment01.git ~/PhotoBlog
 mkvirtualenv --python=python3.12 photoblog        # 가상환경 생성 + 활성화 (프롬프트에 (photoblog))
 pip install -r ~/PhotoBlog/PhotoBlogServer/requirements.txt
 ```
