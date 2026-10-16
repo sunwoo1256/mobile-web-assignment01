@@ -3,7 +3,8 @@
 모바일/웹서비스 프로젝트 공통평가 01 — Chapter 05. 모바일 앱으로 사용하는 기본 포토 블로그
 
 - **Server**: Django + Django REST Framework 포토 블로그 (게시물 = 제목/본문/이미지) — [kiokahn/web_blog](https://github.com/kiokahn/web_blog) 기반
-- **Client**: Android(Java) 앱 — 서버 게시물 이미지를 동기화해 RecyclerView로 표시하고, 새 게시물을 업로드
+- **Client**: Android(Java) 앱 — 로그인 후 서버 게시물을 동기화해 카드 피드로 표시하고, 새 게시물 업로드·좋아요·댓글·삭제
+- **배포**: https://sunwoo.pythonanywhere.com
 
 ## 폴더 구조
 
@@ -12,13 +13,23 @@ ROOT/
 ├── PhotoBlogServer/            # Django 서버 (manage.py 위치)
 │   ├── mysite/  blog/  media/images/default_error.png
 │   ├── requirements.txt        # + requirements-dev.txt (coverage)
-│   ├── socket_server/          # 요청 메시지 검증용 소켓 서버
+│   ├── tools/                  # telnet 요청 원문 (telnet_request.txt)
+│   ├── socket_server/          # 요청 메시지 검증용 소켓 서버 (request/, response.bin)
 │   └── api_test_engine/        # API 검증 엔진 + unittest 자동 테스트
 ├── PhotoViewer/                # Android Studio 프로젝트 (package: com.example.imageviewdemo)
-├── 모바일/웹서비스 프로젝트 공통평가 01_수행 결과 보고서.docx
+├── 모바일웹서비스 프로젝트_공통평가 01_수행 결과 보고서.docx
+├── .gitattributes              # *.bin 등 HTTP 원문의 CRLF 보존
 ├── .gitignore
 └── README.md
 ```
+
+## 테스트 요약
+
+| 대상 | 개수 | 결과 |
+|---|---|---|
+| API 검증 엔진 `photoblog_api.py` | 단위 46 + 통합 9 | 통과, 커버리지 **100%** (구문·분기) |
+| 서버 `blog` 앱 | 63 | 통과, 커버리지 **100%** |
+| Android JVM 단위 테스트 | 11 (MultipartBody 5, TimeUtils 5, 예제 1) | 통과 |
 
 ## 서버 실행 (로컬)
 
@@ -194,7 +205,7 @@ open 127.0.0.1 8000
 | 파일 | 역할 |
 |---|---|
 | [`api_test_engine/photoblog_api.py`](PhotoBlogServer/api_test_engine/photoblog_api.py) | 엔진. 포토 블로그 REST API 호출·검증 클래스 `PhotoBlogApi` (`urllib`만 사용) |
-| [`api_test_engine/test_photoblog_api.py`](PhotoBlogServer/api_test_engine/test_photoblog_api.py) | 엔진 테스트. 단위 37개(서버 없이 `FakeServer`로 HTTP 대체) + 통합 9개(실제 서버) |
+| [`api_test_engine/test_photoblog_api.py`](PhotoBlogServer/api_test_engine/test_photoblog_api.py) | 엔진 테스트. 단위 46개(서버 없이 `FakeServer`로 HTTP 대체) + 통합 9개(실제 서버) = 55개 |
 | [`blog/tests.py`](PhotoBlogServer/blog/tests.py) | Django 서버 측 테스트 63개 (API·토큰·웹 뷰·모델 + 편의 기능: 로그인/권한/조회수/좋아요/댓글) |
 
 ### 엔진 `PhotoBlogApi`
