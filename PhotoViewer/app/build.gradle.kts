@@ -28,6 +28,7 @@ android {
             "\"${localProperty("photoblog.baseUrl", "http://10.0.2.2:8000")}\"")
         buildConfigField("String", "DEFAULT_TOKEN",
             "\"${localProperty("photoblog.token", "")}\"")
+        buildConfigField("int", "DEFAULT_AUTHOR_ID", localProperty("photoblog.authorId", "1"))
     }
 
     buildFeatures {

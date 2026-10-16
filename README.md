@@ -317,6 +317,39 @@ $env:JAVA_HOME = "C:\Program Files\Android\Android Studio\jbr"
 2. 앱에서 **동기화** → `GET /api_root/Post/` (헤더 `Authorization: Token <토큰>`) → 각 게시물의 `image` URL에서 이미지 다운로드 → 목록 표시
 3. "이미지 로드 성공!" 표시. 게시물이 없으면 "불러올 이미지가 없습니다.", 서버 오류면 상태코드/원인을 표시
 
+### 업로드 — "상": Post에 따른 UI 제공
+
+**새로운 이미지 게시** → `UploadActivity`. 화면 구성이 `Post` 모델 필드와 1:1로 대응한다.
+
+| Post 필드 | 입력 UI | 비고 |
+|---|---|---|
+| `title` | 제목 EditText (최대 200자, 모델 `max_length=200`) | 필수 |
+| `text` | 본문 EditText (여러 줄) | 필수 (모델이 빈 값 불가) |
+| `image` | 이미지 선택 버튼(Photo Picker) + 미리보기 | 필수 |
+| `author` | (자동) `local.properties`의 `photoblog.authorId` | 로그인 기능 전까지 |
+| `published_date` | (자동) 현재 시각 ISO-8601 | 서버 보정과 이중 안전장치 |
+
+- 세 필수 항목이 모두 채워져야 **업로드** 버튼이 활성화되고, 상태 문구로 안내한다.
+- 이미지 선택은 `ActivityResultContracts.PickVisualMedia`(Android Photo Picker) — 저장소 권한 불필요.
+- 업로드 중에는 ProgressBar 표시, 입력칸·버튼 비활성화(중복 업로드 방지).
+- `201 Created` → "업로드 성공!" 토스트 → 화면 종료 → 메인 목록 **자동 재동기화**.
+- 실패 → 서버 오류 본문(`getErrorStream()`) 또는 연결 오류를 화면에 표시하고 다시 시도할 수 있게 버튼을 되살린다.
+
+`local.properties`에 author 기본값을 추가한다:
+
+```properties
+photoblog.authorId=1        # 토큰 주인의 사용자 id
+```
+
+### 클라이언트 단위 테스트
+
+multipart 바디 생성(`MultipartBody`)은 Android 의존성이 없어 JVM에서 테스트한다 (한글 UTF-8, 파트 순서·경계).
+
+```powershell
+cd PhotoViewer
+.\gradlew testDebugUnitTest
+```
+
 ## PythonAnywhere 배포
 
 > 작성 예정 (Task 7)
@@ -365,3 +398,12 @@ $env:JAVA_HOME = "C:\Program Files\Android\Android Studio\jbr"
 - 템플릿의 EdgeToEdge 코드가 루트 padding을 시스템 바 크기로 덮어써서 레이아웃 여백(8dp)이 사라지므로, 기본 여백 + 시스템 바로 계산하게 했다.
 - 앱 표시 이름을 `imageviewdemo`에서 `PhotoViewer`로 바꿨다(패키지명은 그대로 `com.example.imageviewdemo`).
 - AsyncTask는 deprecated지만 수업 코드와의 일관성을 위해 사용했다.
+- **업로드(`PutPost`)**: 슬라이드 19의 주석 부분을 별도 화면 `UploadActivity`로 구현했다.
+  - multipart 바디는 `MultipartBody` 클래스로 분리했다. 텍스트를 `DataOutputStream.writeBytes()`로 쓰면 각 문자의 하위 1바이트만 기록되어 한글이 깨지므로 `getBytes(UTF_8)`로 기록한다(JVM 단위 테스트로 검증).
+  - `setFixedLengthStreamingMode`로 `Content-Length`를 보낸다(소켓 서버에서 바디를 끝까지 받을 수 있음).
+  - Uri → byte[]는 `openInputStream` + `ByteArrayOutputStream`(`readAllBytes`는 API 33+).
+  - 긴 변 1600px로 줄이고 JPEG(품질 85)로 재압축한다. 카메라 사진은 픽셀이 눕혀진 채 EXIF에 회전값만 있으므로, `ExifInterface`로 회전을 읽어 픽셀에 반영한다(서버·웹에서도 바로 선 이미지). 파일명은 원본 이름에 확장자만 `.jpg`.
+  - 검증: 3000×2000 + EXIF 90° 테스트 사진 → 서버에 1067×1600 JPEG로 저장됨을 확인.
+- 업로드 중 판단을 `AsyncTask.getStatus()`로 하면 `onPostExecute` 실행 중에도 `FINISHED`가 아니라서, 실패 후 버튼이 비활성으로 남는 문제가 있어 별도 플래그로 관리한다.
+- Photo Picker에서 돌아오면 입력칸 포커스로 키보드가 다시 올라와 업로드 버튼을 가리므로 이미지 선택 후 키보드를 내린다.
+- 업로드 후 자동 재동기화 시에는 "Download" 토스트를 띄우지 않아 "업로드 성공!" 토스트가 가려지지 않게 했다.

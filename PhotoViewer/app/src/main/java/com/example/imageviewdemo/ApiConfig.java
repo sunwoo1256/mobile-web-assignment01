@@ -13,6 +13,7 @@ public final class ApiConfig {
     private static final String PREFS = "photoblog";
     private static final String KEY_BASE_URL = "base_url";
     private static final String KEY_TOKEN = "token";
+    private static final String KEY_AUTHOR_ID = "author_id";
 
     private ApiConfig() {
     }
@@ -37,6 +38,15 @@ public final class ApiConfig {
 
     public static void setToken(Context context, String token) {
         prefs(context).edit().putString(KEY_TOKEN, token.trim()).apply();
+    }
+
+    /** 업로드 시 보낼 author(사용자 id). 로그인 기능(Task 8) 전까지 사용 */
+    public static int getAuthorId(Context context) {
+        return prefs(context).getInt(KEY_AUTHOR_ID, BuildConfig.DEFAULT_AUTHOR_ID);
+    }
+
+    public static void setAuthorId(Context context, int authorId) {
+        prefs(context).edit().putInt(KEY_AUTHOR_ID, authorId).apply();
     }
 
     public static String getPostsUrl(Context context) {

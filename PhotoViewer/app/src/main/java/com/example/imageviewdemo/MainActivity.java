@@ -1,5 +1,6 @@
 package com.example.imageviewdemo;
 
+import android.content.Intent;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.os.AsyncTask;
@@ -10,6 +11,8 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 import androidx.activity.EdgeToEdge;
+import androidx.activity.result.ActivityResultLauncher;
+import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.graphics.Insets;
 import androidx.core.view.ViewCompat;
@@ -38,6 +41,14 @@ public class MainActivity extends AppCompatActivity {
     RecyclerView recyclerView;
     CloadImage taskDownload;
 
+    // 업로드 성공(RESULT_OK)으로 돌아오면 목록을 다시 동기화한다
+    private final ActivityResultLauncher<Intent> uploadLauncher = registerForActivityResult(
+            new ActivityResultContracts.StartActivityForResult(), result -> {
+                if (result.getResultCode() == RESULT_OK) {
+                    onClickDownload(null);
+                }
+            });
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -65,11 +76,13 @@ public class MainActivity extends AppCompatActivity {
         taskDownload = new CloadImage(ApiConfig.getToken(this), getResources().getDisplayMetrics().widthPixels);
         taskDownload.execute(ApiConfig.getPostsUrl(this));
         textView.setText("동기화 중...");
-        Toast.makeText(getApplicationContext(), "Download", Toast.LENGTH_SHORT).show();
+        if (v != null) { // 업로드 후 자동 동기화일 때는 "업로드 성공!" 토스트를 가리지 않도록 생략
+            Toast.makeText(getApplicationContext(), "Download", Toast.LENGTH_SHORT).show();
+        }
     }
 
     public void onClickUpload(View v) {
-        Toast.makeText(getApplicationContext(), "Upload", Toast.LENGTH_SHORT).show();
+        uploadLauncher.launch(new Intent(this, UploadActivity.class));
     }
 
     /** 게시물 목록(JSON)을 받아 각 게시물의 이미지를 내려받는다 */
