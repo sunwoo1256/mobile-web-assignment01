@@ -4,6 +4,7 @@ from . import views
 
 router = routers.DefaultRouter()
 router.register('Post', views.BlogImages)
+router.register('Comment', views.CommentViewSet)
 
 urlpatterns = [
     path('', views.post_list, name='post_list'),

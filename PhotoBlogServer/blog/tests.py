@@ -295,6 +295,10 @@ class LikeTest(SocialApiTestCase):
     def test_like_missing_post_returns_404(self):
         self.assertEqual(self.client.post(f'{POSTS_URL}999/like/').status_code, status.HTTP_404_NOT_FOUND)
 
+    def test_like_str_shows_user_and_post(self):
+        self.client.post(self.like_url())
+        self.assertEqual(str(self.post.likes.get()), 'sunwoo ♥ 내 글')
+
     def test_likes_are_deleted_with_post(self):
         self.client.post(self.like_url())
         self.client.delete(self.detail_url())
